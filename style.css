@@ -5,7 +5,7 @@
   }
 
 html {
-    font-size: 18px;
+    font-size: 16px;
 }
 
 body {
@@ -22,11 +22,28 @@ body {
 }
 
 #main div h1 {
-    font-size: 5rem;
-    line-height: 5rem;
+    font-size: 4.5rem;
+    line-height: 4.5rem;
     margin-bottom: 2rem;
 }
 
 #main div p {
     font-size: 1.5rem;
   }
+
+  @media screen and (max-width: 600px) {
+    #main div {
+        padding: 1.5rem;
+    }
+    
+    #main div h1 {
+        font-size: 3rem;
+        line-height: 3rem;
+        margin-bottom: 1.5rem;
+    }
+    
+    #main div p {
+        font-size: 1.5rem;
+      }
+  }
+  
