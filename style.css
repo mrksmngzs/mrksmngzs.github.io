@@ -9,9 +9,8 @@ html {
 }
 
 body {
-    font-family: 'Work Sans', sans-serif;
+    font-family: 'Roboto Slab', serif;
     font-weight: 600;
-    font-style: semibold;
 }
 
 #main {
@@ -22,7 +21,7 @@ body {
 #main div {
     padding: 2rem;
 }
-
+ 
 #main div h1 {
     font-size: 4.5rem;
     line-height: 4.5rem;
