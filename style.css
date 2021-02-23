@@ -1,0 +1,32 @@
+* {
+    padding: 0;
+    margin: 0;
+    box-sizing: border-box;
+  }
+
+html {
+    font-size: 18px;
+}
+
+body {
+    font-family: 'Work Sans', sans-serif;
+}
+
+#main {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+}
+
+#main div {
+    padding: 2rem;
+}
+
+#main div h1 {
+    font-size: 5rem;
+    line-height: 5rem;
+    margin-bottom: 2rem;
+}
+
+#main div p {
+    font-size: 1.5rem;
+  }
