@@ -9,7 +9,7 @@ html {
 }
 
 body {
-    font-family: 'Roboto Slab', serif;
+    font-family: 'Roboto Slab', serif !important;
     font-weight: 600;
 }
 
