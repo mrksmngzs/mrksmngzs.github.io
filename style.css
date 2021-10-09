@@ -24,6 +24,7 @@ body {
 
 #myname {
     font-size: 4rem;
+    line-height: 90%;
 }
 
 #main_nav {
@@ -55,7 +56,7 @@ a {
     }
   }
 
-@media screen and (max-width: 600px) {
+@media screen and (max-width: 800px) {
 
     #myname {
         font-size: 3rem;
@@ -63,17 +64,16 @@ a {
     
     #main {
         display: flex;
-        flex-wrap: wrap;
-        padding-top: 2rem;
-        padding-left: 2rem;
+        flex-direction: column;
+        align-items: center;
     }
 
     #main_nav {
-        display: inline;
-        padding-top: 4rem;
+        display: flex;
     }
 
-    li {
-        padding: 0.25rem;
+    ul {
+        padding-right: 0;
+        padding-top: 3rem;
     }
 }
