@@ -27,6 +27,10 @@ body {
     line-height: 90%;
 }
 
+#title404 {
+    font-size: 6rem;
+}
+
 #main_nav {
     display: flex;
 }
@@ -77,5 +81,9 @@ a {
     ul {
         padding-right: 0;
         padding-top: 3rem;
+    }
+
+    #title404 {
+        font-size: 4rem;
     }
 }
