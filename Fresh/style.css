@@ -9,3 +9,18 @@ body {
     font-weight: 600;
     font-size: 16px;
 }
+
+a:link {
+    color: #9A9A9A;
+    text-decoration: none;
+}
+
+a:hover {
+    color: #26A4FF;
+    text-decoration: none;
+}
+
+a:visited {
+    color: #26A4FF;
+    text-decoration: none;
+}
