@@ -22,7 +22,7 @@ body {
     justify-content: space-between;
 }
 
-h1 {
+#myname {
     font-size: 4rem;
 }
 
@@ -56,10 +56,24 @@ a {
   }
 
 @media screen and (max-width: 600px) {
-    #main {
-        flex-wrap: wrap;
+
+    #myname {
+        font-size: 3rem;
     }
-    #main_nav{
-        display: none;
+    
+    #main {
+        display: flex;
+        flex-wrap: wrap;
+        padding-top: 2rem;
+        padding-left: 2rem;
+    }
+
+    #main_nav {
+        display: inline;
+        padding-top: 4rem;
+    }
+
+    li {
+        padding: 0.25rem;
     }
 }
