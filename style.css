@@ -6,6 +6,7 @@
 
 html {
     font-size: 16px;
+    color: #202020;
 }
 
 body {
@@ -14,55 +15,48 @@ body {
 }
 
 #main {
-    display: grid;
-    grid-template-columns: 1fr;
-    grid-template-rows: repeat(2, 1fr);
-    grid-column-gap: 0px;
-    grid-row-gap: 0px;
+    padding-top: 4rem;
+    padding-left: 4rem;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
 }
 
-#main div {
-    padding: 2rem;
-    grid-area: 1 / 1 / 2 / 2;
-}
- 
-#main div h1 {
-    font-size: 4.5rem;
-    line-height: 4.5rem;
-    margin-bottom: 2rem;
+h1 {
+    font-size: 4rem;
 }
 
-#main div p {
-    font-size: 1.5rem;
+#main_nav {
+    display: flex;
+}
+
+ul {
+    list-style-type: none;
+    padding-right: 4rem;
+    font-size: 1.25rem;
   }
 
-  @media screen and (max-width: 600px) {
-    #main div {
-        padding: 1.5rem;
+li {
+    padding: 1rem;
+}
+
+a {
+    text-decoration: none;
+    color: #202020;
+}
+
+@media (prefers-color-scheme: dark) {
+    body {
+        color: #eee;
+        background: #202020;
     }
-    
-    #main div h1 {
-        font-size: 3rem;
-        line-height: 3rem;
-        margin-bottom: 1.5rem;
+    a {
+        color: #eee;
     }
-    
-    #main div p {
-        font-size: 1.5rem;
-      }
   }
 
-a:link {
-    color: #9A9A9A;
-    text-decoration: none;
-}
-
-a:hover {
-    color: #26A4FF;
-    text-decoration: none;
-}
-
-a:visited {
-    color: #26A4FF;
-    text-decoration: none;
+@media screen and (max-width: 600px) {
+    #main {
+        flex-wrap: wrap;
+    }
 }
