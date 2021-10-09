@@ -59,4 +59,7 @@ a {
     #main {
         flex-wrap: wrap;
     }
+    #main_nav{
+        display: none;
+    }
 }
