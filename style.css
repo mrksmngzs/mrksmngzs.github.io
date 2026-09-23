@@ -117,6 +117,30 @@ body {
     font-weight: 400;
 }
 
+#now_status button {
+    display: block;
+    font: inherit;
+    color: inherit;
+    text-align: inherit;
+    background: none;
+    border: 0;
+    padding: 0;
+    cursor: pointer;
+    transition: color 200ms ease-out;
+}
+
+#now_status button:hover {
+    color: var(--text-bio);
+}
+
+#now_status button:focus-visible {
+    outline-offset: 4px;
+}
+
+#now_status button:empty {
+    display: none;
+}
+
 ul {
     list-style-type: none;
     padding-right: 4rem;
@@ -153,7 +177,8 @@ a {
     #now_colon {
         animation: none;
     }
-    #main_nav a {
+    #main_nav a,
+    #now_status button {
         transition: none;
     }
 }

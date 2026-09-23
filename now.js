@@ -101,17 +101,28 @@
     const colon = document.createElement("span");
     colon.id = "now_colon";
     colon.textContent = ":";
+    // The status line is a button: clicking it picks a new line, as a page refresh would.
+    const line = document.createElement("button");
+    line.type = "button";
+    line.title = "Show another";
     let slot;
 
-    function render() {
+    function pickLine() {
+        const pool = poolFor(slot);
+        // Skip the line already showing, so a click always changes something.
+        const others = pool.filter((l) => l !== line.textContent);
+        const choices = others.length ? others : pool;
+        line.textContent = choices.length ? choices[Math.floor(Math.random() * choices.length)] : "";
+    }
+
+    function render(repick = false) {
         const now = new Date();
         const r = rigaTime(now);
         const s = slotFor(r, now.getTime());
-        // Only re-pick the line when the slot changes, so it stays put while someone reads it.
-        if (s !== slot) {
+        // Only re-pick on a slot change or a click, so the line stays put while someone reads it.
+        if (s !== slot || repick) {
             slot = s;
-            const pool = poolFor(s);
-            statusEl.textContent = pool.length ? pool[Math.floor(Math.random() * pool.length)] : "";
+            pickLine();
         }
         hours.data = pad(r.hour);
         minutes.data = pad(r.minute);
@@ -119,9 +130,11 @@
 
     render();
     timeEl.replaceChildren("Riga, ", hours, colon, minutes);
+    statusEl.replaceChildren(line);
+    line.addEventListener("click", () => render(true));
     setTimeout(() => {
         render();
-        setInterval(render, 60000);
+        setInterval(() => render(), 60000);
     }, 60000 - Date.now() % 60000);
     // Background tabs throttle timers, so catch up when the page is shown again.
     document.addEventListener("visibilitychange", () => {
