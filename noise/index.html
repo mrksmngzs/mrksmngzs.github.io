@@ -41,8 +41,8 @@
   .step.on .note, .step.on .num { color: #fff; }
   .step.selected { border-color: var(--sel); }
   /* Touch: no double-tap zoom, no tap flash, no text selection on controls. */
-  button, select, input, .step, .piano { touch-action: manipulation; -webkit-tap-highlight-color: transparent; }
-  button, .step, .piano { -webkit-user-select: none; user-select: none; }
+  button, select, input, .step, .piano, .pads { touch-action: manipulation; -webkit-tap-highlight-color: transparent; }
+  button, .step, .piano, .pads { -webkit-user-select: none; user-select: none; }
   .kb-wrap { display: flex; gap: 10px; align-items: stretch; }
   .kb-oct { display: flex; flex-direction: column; gap: 6px; justify-content: center; align-items: center; min-width: 54px; }
   .kb-oct button { width: 100%; }
@@ -52,6 +52,12 @@
   .piano .black { position: absolute; top: 0; width: 8%; height: 60%; background: #15161a; color: #888; border-radius: 0 0 4px 4px; z-index: 1; }
   .piano .white.down { background: var(--on); color: #fff; }
   .piano .black.down { background: var(--on); color: #fff; }
+  .pads { flex: 1; display: grid; gap: 4px; }   /* columns set in JS: one row of pads */
+  .pads .key { height: 110px; min-width: 0; border-radius: 6px; background: #3a3f4a; color: var(--text); cursor: pointer;
+               display: flex; align-items: flex-end; justify-content: center; font-size: 12px; padding-bottom: 6px; }
+  .pads .key.root { background: #4a5670; font-weight: 700; }
+  .pads .key.down { background: var(--on); color: #fff; }
+  .scale-row { margin-bottom: 10px; }
   .step.playhead::after { content: ""; position: absolute; left: 0; right: 0; bottom: -7px; height: 3px; background: var(--play); border-radius: 2px; }
 </style>
 </head>
@@ -67,7 +73,7 @@
     <label>Preset <select id="preset"></select></label>
     <button id="reset">Reset</button>
   </div>
-  <div class="hint">Keys: A W S E D F T G Y H U J K = C..C · Z / X = keyboard octave (<span id="kbOct"></span>) · Space = play/stop</div>
+  <div class="hint">Keys: <span id="kbHint"></span> · Z / X = keyboard octave (<span id="kbOct"></span>) · Space = play/stop</div>
 </section>
 
 <section>
@@ -90,13 +96,17 @@
 
 <section>
   <h2>Keys</h2>
+  <div class="row scale-row">
+    <label>Root <select id="scaleRoot"></select></label>
+    <label>Scale <select id="scaleName"></select></label>
+  </div>
   <div class="kb-wrap">
     <div class="kb-oct">
       <button id="kbUp">Oct +</button>
       <span id="kbOctLabel"></span>
       <button id="kbDown">Oct −</button>
     </div>
-    <div class="piano" id="piano"></div>
+    <div id="keys"></div>
   </div>
 </section>
 
@@ -136,6 +146,22 @@ const PRESETS = {
 };
 const DEFAULT_PRESET = 'E-piano';
 
+// Intervals in semitones from the root. Chromatic shows the piano instead of scale pads.
+const SCALES = {
+  'Major':            [0, 2, 4, 5, 7, 9, 11],
+  'Minor':            [0, 2, 3, 5, 7, 8, 10],
+  'Dorian':           [0, 2, 3, 5, 7, 9, 10],
+  'Phrygian':         [0, 1, 3, 5, 7, 8, 10],
+  'Lydian':           [0, 2, 4, 6, 7, 9, 11],
+  'Mixolydian':       [0, 2, 4, 5, 7, 9, 10],
+  'Pentatonic major': [0, 2, 4, 7, 9],
+  'Pentatonic minor': [0, 3, 5, 7, 10],
+  'Blues':            [0, 3, 5, 6, 7, 10],
+  'Chromatic':        null,
+};
+const DEFAULT_SCALE = { root: 0, name: 'Minor' };
+const SCALE_OCTAVES = 2;   // pads span two octaves plus the top root
+
 const DECAY_MIN = 0.02, DECAY_MAX = 2;
 const NOTE_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
 
@@ -160,7 +186,7 @@ function defaultPattern() {
 }
 
 function defaultState() {
-  return { patch: presetToPatch(DEFAULT_PRESET), preset: DEFAULT_PRESET, steps: defaultPattern(), tempo: 120 };
+  return { scale: { ...DEFAULT_SCALE }, patch: presetToPatch(DEFAULT_PRESET), preset: DEFAULT_PRESET, steps: defaultPattern(), tempo: 120 };
 }
 
 function midiToFreq(m) { return 440 * Math.pow(2, (m - 69) / 12); }
@@ -202,7 +228,12 @@ function loadState() {
     });
     const tempo = Number.isFinite(raw.tempo) ? clamp(Math.round(raw.tempo), 60, 200) : def.tempo;
     const preset = PRESETS[raw.preset] ? raw.preset : '';
-    return { patch, preset, steps, tempo };
+    const sc = raw.scale || {};
+    const scale = {
+      root: Number.isInteger(sc.root) ? clamp(sc.root, 0, 11) : DEFAULT_SCALE.root,
+      name: sc.name in SCALES ? sc.name : DEFAULT_SCALE.name,
+    };
+    return { patch, preset, steps, tempo, scale };
   } catch (e) {
     return def;
   }
@@ -367,7 +398,6 @@ const ui = {
 let selectedOp = 0;     // 0-based
 let selectedStep = -1;
 let kbOctave = 4;       // C4 = MIDI 60
-const pianoKeys = [];   // [{ el, semitone }]
 
 const stepEls = [];
 
@@ -553,7 +583,7 @@ function setPlayhead(step) {
 function renderAll() {
   ui.tempo.value = state.tempo;
   ui.tempoVal.textContent = state.tempo;
-  renderKbOctave();
+  renderScale();
   renderPatch();
   renderSteps();
 }
@@ -563,6 +593,25 @@ function renderAll() {
    ========================================================================= */
 
 const KEY_TO_SEMITONE = { a: 0, w: 1, s: 2, e: 3, d: 4, f: 5, t: 6, g: 7, y: 8, h: 9, u: 10, j: 11, k: 12 };
+const DEGREE_KEYS = ['a', 's', 'd', 'f', 'g', 'h', 'j', 'k', 'l', ';'];   // scale mode: home row = degrees
+
+function scaleIntervals() { return SCALES[state.scale.name]; }
+
+// Semitone offsets (from C of the keyboard octave) for every pad in the current scale.
+function scaleSemitones() {
+  const iv = scaleIntervals();
+  const out = [];
+  for (let o = 0; o < SCALE_OCTAVES; o++) for (const i of iv) out.push(state.scale.root + 12 * o + i);
+  out.push(state.scale.root + 12 * SCALE_OCTAVES);
+  return out;
+}
+
+// Computer key -> semitone offset, or undefined. Depends on the scale mode.
+function keyToSemitone(key) {
+  if (!scaleIntervals()) return KEY_TO_SEMITONE[key];
+  const d = DEGREE_KEYS.indexOf(key);
+  return d >= 0 ? scaleSemitones()[d] : undefined;
+}
 
 document.addEventListener('keydown', e => {
   if (e.metaKey || e.ctrlKey || e.altKey) return;
@@ -578,15 +627,16 @@ document.addEventListener('keydown', e => {
     shiftKbOctave(key === 'x' ? 1 : -1);
     return;
   }
-  if (key in KEY_TO_SEMITONE) {
+  const semitone = keyToSemitone(key);
+  if (semitone !== undefined) {
     e.preventDefault();
     if (e.repeat) return;
-    playKey(KEY_TO_SEMITONE[key]);
-    flashPianoKey(KEY_TO_SEMITONE[key]);
+    playKey(semitone);
+    flashPianoKey(semitone);
   }
 });
 
-// Shared by computer keys and the on-screen piano: audition, and assign to the selected step.
+// Shared by computer keys, piano and pads: audition, and assign to the selected step.
 function playKey(semitone) {
   const midi = clamp(12 * (kbOctave + 1) + semitone, 0, 127);
   ensureAudio();
@@ -600,14 +650,15 @@ function playKey(semitone) {
 }
 
 function shiftKbOctave(delta) {
-  kbOctave = clamp(kbOctave + delta, 0, 8);
+  kbOctave = clamp(kbOctave + delta, 0, 7);
   renderKbOctave();
 }
 
 function renderKbOctave() {
-  ui.kbOct.textContent = 'C' + kbOctave;
-  $('kbOctLabel').textContent = 'C' + kbOctave;
-  pianoKeys.forEach(k => { k.label.textContent = NOTE_NAMES[k.semitone % 12] + (kbOctave + Math.floor(k.semitone / 12)); });
+  const low = 12 * (kbOctave + 1) + (scaleIntervals() ? state.scale.root : 0);
+  ui.kbOct.textContent = noteName(low);
+  $('kbOctLabel').textContent = noteName(low);
+  pianoKeys.forEach(k => { k.label.textContent = noteName(12 * (kbOctave + 1) + k.semitone); });
 }
 
 function flashPianoKey(semitone) {
@@ -618,41 +669,79 @@ function flashPianoKey(semitone) {
 }
 
 /* =========================================================================
-   ON-SCREEN PIANO (touch / mouse)
+   ON-SCREEN KEYS: chromatic piano or scale pads (touch / mouse)
    ========================================================================= */
 
-function buildPiano() {
-  const piano = $('piano');
-  const whites = [0, 2, 4, 5, 7, 9, 11, 12];
-  const blacks = { 1: 0, 3: 1, 6: 3, 8: 4, 10: 5 };   // semitone -> index of the white key to its left
-  const addKey = (semitone, cls) => {
-    const el = document.createElement('div');
-    el.className = 'key ' + cls;
-    el.setAttribute('role', 'button');
-    const label = document.createElement('span');
-    el.appendChild(label);
-    // pointerdown fires immediately on touch (no click delay); one handler covers mouse, pen and touch.
-    el.addEventListener('pointerdown', e => {
-      e.preventDefault();
-      el.classList.add('down');
-      playKey(semitone);
-    });
-    const up = () => el.classList.remove('down');
-    el.addEventListener('pointerup', up);
-    el.addEventListener('pointerleave', up);
-    el.addEventListener('pointercancel', up);
-    piano.appendChild(el);
-    pianoKeys.push({ el, semitone, label });
-    return el;
+let pianoKeys = [];   // [{ el, semitone, label }]
+
+function addKey(container, semitone, cls) {
+  const el = document.createElement('div');
+  el.className = 'key ' + cls;
+  el.setAttribute('role', 'button');
+  const label = document.createElement('span');
+  el.appendChild(label);
+  // pointerdown fires immediately on touch (no click delay); one handler covers mouse, pen and touch.
+  el.addEventListener('pointerdown', e => {
+    e.preventDefault();
+    el.classList.add('down');
+    playKey(semitone);
+  });
+  const up = () => el.classList.remove('down');
+  el.addEventListener('pointerup', up);
+  el.addEventListener('pointerleave', up);
+  el.addEventListener('pointercancel', up);
+  container.appendChild(el);
+  pianoKeys.push({ el, semitone, label });
+  return el;
+}
+
+function renderKeys() {
+  const container = $('keys');
+  container.innerHTML = '';
+  pianoKeys = [];
+
+  if (scaleIntervals()) {
+    container.className = 'pads';
+    const semis = scaleSemitones();
+    container.style.gridTemplateColumns = `repeat(${semis.length}, 1fr)`;
+    for (const s of semis) addKey(container, s, (s - state.scale.root) % 12 === 0 ? 'root' : '');
+    $('kbHint').textContent = 'A S D F G H J K L ; = scale degrees';
+  } else {
+    container.className = 'piano';
+    container.style.gridTemplateColumns = '';
+    const whites = [0, 2, 4, 5, 7, 9, 11, 12];
+    const blacks = { 1: 0, 3: 1, 6: 3, 8: 4, 10: 5 };   // semitone -> index of the white key to its left
+    whites.forEach(s => addKey(container, s, 'white'));
+    const whiteW = 100 / whites.length;
+    for (const [s, left] of Object.entries(blacks)) {
+      addKey(container, +s, 'black').style.left = `calc(${(left + 1) * whiteW}% - 4%)`;
+    }
+    $('kbHint').textContent = 'A W S E D F T G Y H U J K = C..C';
+  }
+  renderKbOctave();
+}
+
+function buildKeys() {
+  const root = $('scaleRoot'), name = $('scaleName');
+  root.innerHTML = NOTE_NAMES.map((n, i) => `<option value="${i}">${n}</option>`).join('');
+  name.innerHTML = Object.keys(SCALES).map(n => `<option value="${n}">${n}</option>`).join('');
+  const onChange = () => {
+    state.scale = { root: +root.value, name: name.value };
+    renderKeys();
+    changed();
   };
-  whites.forEach(s => addKey(s, 'white'));
-  const whiteW = 100 / whites.length;
-  for (const [s, left] of Object.entries(blacks)) {
-    const el = addKey(+s, 'black');
-    el.style.left = `calc(${(left + 1) * whiteW}% - 4%)`;
+  for (const el of [root, name]) {
+    el.addEventListener('change', onChange);
+    el.addEventListener('change', () => el.blur());
   }
   $('kbUp').addEventListener('click', () => shiftKbOctave(1));
   $('kbDown').addEventListener('click', () => shiftKbOctave(-1));
+}
+
+function renderScale() {
+  $('scaleRoot').value = state.scale.root;
+  $('scaleName').value = state.scale.name;
+  renderKeys();
 }
 
 /* =========================================================================
@@ -660,7 +749,7 @@ function buildPiano() {
    ========================================================================= */
 
 buildUI();
-buildPiano();
+buildKeys();
 renderAll();
 </script>
 </body>
