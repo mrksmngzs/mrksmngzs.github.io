@@ -1,0 +1,667 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>FM Groovebox v0</title>
+<style>
+  :root {
+    --bg: #1b1d22; --panel: #24272e; --line: #353943; --text: #d8dbe2; --dim: #8a909c;
+    --carrier: #4fc28a; --mod: #e8a33d; --on: #4f8fe8; --sel: #ffffff; --play: #e85d5d;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; padding: 16px; background: var(--bg); color: var(--text); font: 14px/1.4 system-ui, sans-serif; }
+  h1 { font-size: 18px; margin: 0 0 12px; }
+  h2 { font-size: 12px; text-transform: uppercase; letter-spacing: .08em; color: var(--dim); margin: 0 0 10px; }
+  section { background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 12px; margin-bottom: 12px; max-width: 900px; }
+  .row { display: flex; flex-wrap: wrap; gap: 14px; align-items: center; }
+  label { display: inline-flex; gap: 6px; align-items: center; }
+  button, select { background: #30343c; color: var(--text); border: 1px solid var(--line); border-radius: 4px; padding: 5px 10px; font: inherit; cursor: pointer; }
+  button:hover, select:hover { border-color: var(--dim); }
+  button.active { background: var(--on); border-color: var(--on); color: #fff; }
+  #play.active { background: var(--play); border-color: var(--play); }
+  .hint { color: var(--dim); font-size: 12px; margin-top: 8px; }
+  .algo-wrap { display: flex; gap: 16px; align-items: center; flex-wrap: wrap; }
+  #algoDiagram { background: #1e2026; border-radius: 4px; }
+  .op-tabs button { min-width: 70px; }
+  .op-tabs button .role { display: block; font-size: 10px; text-transform: uppercase; }
+  .op-tabs button.carrier .role { color: var(--carrier); }
+  .op-tabs button.modulator .role { color: var(--mod); }
+  .op-tabs button.active .role { color: #fff; }
+  .sliders { display: grid; grid-template-columns: 70px 1fr 70px; gap: 8px 10px; align-items: center; margin-top: 12px; max-width: 520px; }
+  .sliders input { width: 100%; }
+  .sliders .val { font-variant-numeric: tabular-nums; text-align: right; }
+  #steps { display: grid; grid-template-columns: repeat(16, 1fr); gap: 4px; }
+  .step { height: 54px; border-radius: 4px; background: #30343c; border: 2px solid transparent; cursor: pointer; user-select: none;
+          display: flex; flex-direction: column; justify-content: space-between; padding: 3px 4px; font-size: 11px; position: relative; }
+  .step:nth-child(4n+1) { background: #383c46; }
+  .step .num { color: var(--dim); }
+  .step .note { font-weight: 600; color: var(--dim); }
+  .step.on { background: var(--on); }
+  .step.on .note, .step.on .num { color: #fff; }
+  .step.selected { border-color: var(--sel); }
+  /* Touch: no double-tap zoom, no tap flash, no text selection on controls. */
+  button, select, input, .step, .piano { touch-action: manipulation; -webkit-tap-highlight-color: transparent; }
+  button, .step, .piano { -webkit-user-select: none; user-select: none; }
+  .kb-wrap { display: flex; gap: 10px; align-items: stretch; }
+  .kb-oct { display: flex; flex-direction: column; gap: 6px; justify-content: center; align-items: center; min-width: 54px; }
+  .kb-oct button { width: 100%; }
+  .piano { position: relative; flex: 1; max-width: 560px; height: 130px; display: flex; }
+  .piano .key { cursor: pointer; display: flex; align-items: flex-end; justify-content: center; font-size: 11px; padding-bottom: 6px; }
+  .piano .white { flex: 1; background: #e6e8ec; color: #555; border: 1px solid #999; border-radius: 0 0 5px 5px; margin-right: -1px; }
+  .piano .black { position: absolute; top: 0; width: 8%; height: 60%; background: #15161a; color: #888; border-radius: 0 0 4px 4px; z-index: 1; }
+  .piano .white.down { background: var(--on); color: #fff; }
+  .piano .black.down { background: var(--on); color: #fff; }
+  .step.playhead::after { content: ""; position: absolute; left: 0; right: 0; bottom: -7px; height: 3px; background: var(--play); border-radius: 2px; }
+</style>
+</head>
+<body>
+<h1>FM Groovebox <span style="color:var(--dim);font-weight:400">v0</span></h1>
+
+<section>
+  <h2>Transport</h2>
+  <div class="row">
+    <button id="play">Play</button>
+    <label>Tempo <input id="tempo" type="range" min="60" max="200" step="1"> <span id="tempoVal"></span> BPM</label>
+    <label>Octave <select id="octave"><option value="-2">-2</option><option value="-1">-1</option><option value="0">0</option><option value="1">+1</option></select></label>
+    <label>Preset <select id="preset"></select></label>
+    <button id="reset">Reset</button>
+  </div>
+  <div class="hint">Keys: A W S E D F T G Y H U J K = C..C · Z / X = keyboard octave (<span id="kbOct"></span>) · Space = play/stop</div>
+</section>
+
+<section>
+  <h2>Algorithm</h2>
+  <div class="algo-wrap">
+    <div class="row" id="algoButtons"></div>
+    <svg id="algoDiagram" width="220" height="160" viewBox="0 0 220 160"></svg>
+  </div>
+</section>
+
+<section>
+  <h2>Operator</h2>
+  <div class="row op-tabs" id="opTabs"></div>
+  <div class="sliders">
+    <span>Ratio</span><input id="ratio" type="range" min="0" step="1"><span class="val" id="ratioVal"></span>
+    <span id="levelLabel">Level</span><input id="level" type="range" min="0" max="10" step="0.1"><span class="val" id="levelVal"></span>
+    <span>Decay</span><input id="decay" type="range" min="0" max="1000" step="1"><span class="val" id="decayVal"></span>
+  </div>
+</section>
+
+<section>
+  <h2>Keys</h2>
+  <div class="kb-wrap">
+    <div class="kb-oct">
+      <button id="kbUp">Oct +</button>
+      <span id="kbOctLabel"></span>
+      <button id="kbDown">Oct −</button>
+    </div>
+    <div class="piano" id="piano"></div>
+  </div>
+</section>
+
+<section>
+  <h2>Sequencer</h2>
+  <div id="steps"></div>
+  <div class="hint">Click/tap a step to toggle and select it. Play a key to set the selected step's note.</div>
+</section>
+
+<script>
+'use strict';
+
+/* =========================================================================
+   DATA: ratios, algorithms, presets, defaults
+   ========================================================================= */
+
+const RATIOS = [0.5, 1, 2, 3, 4, 5, 6, 7, 1.41, 2.76, 3.5];
+
+// Ops are 1-based in this table to match the spec. edges: [modulator, target].
+const ALGORITHMS = {
+  1: { edges: [[4, 3], [3, 2], [2, 1]], carriers: [1] },
+  2: { edges: [[3, 2], [2, 1], [4, 1]], carriers: [1] },
+  3: { edges: [[2, 1], [3, 1], [4, 1]], carriers: [1] },
+  4: { edges: [[2, 1], [4, 3]], carriers: [1, 3] },
+  5: { edges: [[4, 3], [3, 1], [3, 2]], carriers: [1, 2] },
+  6: { edges: [[2, 1]], carriers: [1, 3, 4] },
+  7: { edges: [[3, 2], [2, 1]], carriers: [1, 4] },
+  8: { edges: [], carriers: [1, 2, 3, 4] },
+};
+
+const PRESETS = {
+  'E-piano': { algo: 4, octave: 0,  ops: [[1, 8, 1.2], [1, 2, 0.8], [4, 4, 0.4], [1, 2.5, 0.15]] },
+  'Bass':    { algo: 1, octave: -1, ops: [[0.5, 10, 0.4], [0.5, 3, 0.15], [1, 1, 0.1], [1, 0, 0.1]] },
+  'Bell':    { algo: 3, octave: 1,  ops: [[1, 8, 1.8], [3.5, 3, 1.2], [1, 1.5, 0.6], [7, 1, 0.3]] },
+  'Pluck':   { algo: 7, octave: 0,  ops: [[1, 8, 0.3], [2, 5, 0.06], [3, 2, 0.04], [4, 3, 0.2]] },
+  'Organ':   { algo: 8, octave: 0,  ops: [[1, 8, 0.6], [2, 5, 0.6], [3, 3, 0.6], [4, 2, 0.6]] },
+};
+const DEFAULT_PRESET = 'E-piano';
+
+const DECAY_MIN = 0.02, DECAY_MAX = 2;
+const NOTE_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
+
+function presetToPatch(name) {
+  const p = PRESETS[name];
+  return {
+    algo: p.algo,
+    octave: p.octave,
+    ops: p.ops.map(([ratio, level, decay]) => ({ ratio, level, decay })),
+  };
+}
+
+// Step objects carry `locks` so v1 parameter locks can slot in without a format change.
+function makeStep(on, note) { return { on, note, locks: {} }; }
+
+function defaultPattern() {
+  const steps = [];
+  for (let i = 0; i < 16; i++) steps.push(makeStep(false, 60));
+  const hits = { 0: 48, 3: 60, 6: 55, 8: 63, 10: 60, 12: 46, 14: 58 };
+  for (const [i, n] of Object.entries(hits)) steps[i] = makeStep(true, n);
+  return steps;
+}
+
+function defaultState() {
+  return { patch: presetToPatch(DEFAULT_PRESET), preset: DEFAULT_PRESET, steps: defaultPattern(), tempo: 120 };
+}
+
+function midiToFreq(m) { return 440 * Math.pow(2, (m - 69) / 12); }
+function noteName(m) { return NOTE_NAMES[m % 12] + (Math.floor(m / 12) - 1); }
+function clamp(v, lo, hi) { return Math.min(hi, Math.max(lo, v)); }
+
+/* =========================================================================
+   STORAGE
+   ========================================================================= */
+
+const STORAGE_KEY = 'fm-groovebox-v0';
+
+function saveState() {
+  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); } catch (e) { /* storage unavailable */ }
+}
+
+function loadState() {
+  const def = defaultState();
+  let raw = null;
+  try { raw = JSON.parse(localStorage.getItem(STORAGE_KEY)); } catch (e) { return def; }
+  if (!raw || typeof raw !== 'object') return def;
+  try {
+    const p = raw.patch;
+    const patch = {
+      algo: ALGORITHMS[p.algo] ? p.algo : def.patch.algo,
+      octave: clamp(Math.round(+p.octave || 0), -2, 1),
+      ops: def.patch.ops.map((d, i) => {
+        const o = (p.ops && p.ops[i]) || {};
+        return {
+          ratio: RATIOS.includes(o.ratio) ? o.ratio : d.ratio,
+          level: Number.isFinite(o.level) ? clamp(o.level, 0, 10) : d.level,
+          decay: Number.isFinite(o.decay) ? clamp(o.decay, DECAY_MIN, DECAY_MAX) : d.decay,
+        };
+      }),
+    };
+    const steps = def.steps.map((d, i) => {
+      const s = (raw.steps && raw.steps[i]) || d;
+      return { on: !!s.on, note: Number.isInteger(s.note) ? clamp(s.note, 0, 127) : d.note, locks: s.locks || {} };
+    });
+    const tempo = Number.isFinite(raw.tempo) ? clamp(Math.round(raw.tempo), 60, 200) : def.tempo;
+    const preset = PRESETS[raw.preset] ? raw.preset : '';
+    return { patch, preset, steps, tempo };
+  } catch (e) {
+    return def;
+  }
+}
+
+let state = loadState();
+
+/* =========================================================================
+   ENGINE: audio context, master bus, FM voice
+   ========================================================================= */
+
+let ctx = null;
+let masterIn = null;
+
+function ensureAudio() {
+  if (!ctx) {
+    ctx = new AudioContext();
+    masterIn = ctx.createGain();
+    masterIn.gain.value = 0.8;
+    const comp = ctx.createDynamicsCompressor();
+    comp.threshold.value = -12;
+    comp.knee.value = 6;
+    comp.ratio.value = 12;
+    comp.attack.value = 0.002;
+    comp.release.value = 0.2;
+    masterIn.connect(comp);
+    comp.connect(ctx.destination);
+  }
+  if (ctx.state === 'suspended') ctx.resume();
+  return ctx;
+}
+
+const ATTACK = 0.004;
+
+/**
+ * Create and schedule one FM voice.
+ * params: full parameter object { algo, octave, ops: [{ratio, level, decay} x4] }.
+ * In v1 this will receive the patch merged with a step's locks.
+ */
+function playVoice(params, midi, time) {
+  const algo = ALGORITHMS[params.algo];
+  const noteFreq = midiToFreq(midi + 12 * params.octave);
+  const carrierPeak = 0.24 / Math.sqrt(algo.carriers.length);
+
+  const oscs = [], gains = [];
+  let maxDecay = 0;
+
+  params.ops.forEach((op, i) => {
+    const osc = ctx.createOscillator();
+    osc.type = 'sine';
+    osc.frequency.value = noteFreq * op.ratio;
+    const g = ctx.createGain();
+    g.gain.value = 0;
+    osc.connect(g);
+    oscs.push(osc);
+    gains.push(g);
+    maxDecay = Math.max(maxDecay, op.decay);
+  });
+
+  // Wire modulators to their targets' frequency params, carriers to the master bus.
+  const peaks = [0, 0, 0, 0];
+  for (const [m, t] of algo.edges) {
+    const op = params.ops[m - 1];
+    gains[m - 1].connect(oscs[t - 1].frequency);
+    peaks[m - 1] = op.level * noteFreq * op.ratio;
+  }
+  for (const c of algo.carriers) {
+    gains[c - 1].connect(masterIn);
+    peaks[c - 1] = carrierPeak * (params.ops[c - 1].level / 10);
+  }
+
+  // Envelopes: 4 ms linear attack, then exponential decay.
+  gains.forEach((g, i) => {
+    const p = g.gain;
+    p.setValueAtTime(0, time);
+    p.linearRampToValueAtTime(peaks[i], time + ATTACK);
+    p.setTargetAtTime(0, time + ATTACK, params.ops[i].decay);
+  });
+
+  const stopAt = time + ATTACK + 6 * maxDecay;
+  oscs.forEach(o => { o.start(time); o.stop(stopAt); });
+  oscs[0].onended = () => { gains.forEach(g => g.disconnect()); oscs.forEach(o => o.disconnect()); };
+}
+
+/* =========================================================================
+   SEQUENCER: lookahead scheduler
+   ========================================================================= */
+
+const LOOKAHEAD_MS = 25;
+const SCHEDULE_AHEAD = 0.1;
+
+const seq = {
+  playing: false,
+  timer: null,
+  nextTime: 0,
+  nextStep: 0,
+  queue: [],          // [{ step, time }] for playhead drawing
+  playhead: -1,
+};
+
+function stepDuration() { return 60 / state.tempo / 4; }
+
+function scheduler() {
+  while (seq.nextTime < ctx.currentTime + SCHEDULE_AHEAD) {
+    const s = state.steps[seq.nextStep];
+    if (s.on) playVoice(voiceParamsForStep(s), s.note, seq.nextTime);
+    seq.queue.push({ step: seq.nextStep, time: seq.nextTime });
+    seq.nextTime += stepDuration();
+    seq.nextStep = (seq.nextStep + 1) % 16;
+  }
+}
+
+// v1 hook: merge step.locks over the patch here.
+function voiceParamsForStep(step) { return state.patch; }
+
+function startSeq() {
+  ensureAudio();
+  seq.playing = true;
+  seq.nextStep = 0;
+  seq.nextTime = ctx.currentTime + 0.05;
+  seq.queue = [];
+  scheduler();
+  seq.timer = setInterval(scheduler, LOOKAHEAD_MS);
+  requestAnimationFrame(drawPlayhead);
+  ui.play.classList.add('active');
+  ui.play.textContent = 'Stop';
+}
+
+function stopSeq() {
+  seq.playing = false;
+  clearInterval(seq.timer);
+  seq.timer = null;
+  seq.queue = [];
+  setPlayhead(-1);
+  ui.play.classList.remove('active');
+  ui.play.textContent = 'Play';
+}
+
+function togglePlay() { seq.playing ? stopSeq() : startSeq(); }
+
+function drawPlayhead() {
+  if (!seq.playing) return;
+  const now = ctx.currentTime;
+  let step = seq.playhead;
+  while (seq.queue.length && seq.queue[0].time <= now) step = seq.queue.shift().step;
+  setPlayhead(step);
+  requestAnimationFrame(drawPlayhead);
+}
+
+/* =========================================================================
+   UI
+   ========================================================================= */
+
+const $ = id => document.getElementById(id);
+const ui = {
+  play: $('play'), tempo: $('tempo'), tempoVal: $('tempoVal'), octave: $('octave'), preset: $('preset'),
+  reset: $('reset'), kbOct: $('kbOct'), algoButtons: $('algoButtons'), algoDiagram: $('algoDiagram'),
+  opTabs: $('opTabs'), ratio: $('ratio'), ratioVal: $('ratioVal'), level: $('level'), levelVal: $('levelVal'),
+  levelLabel: $('levelLabel'), decay: $('decay'), decayVal: $('decayVal'), steps: $('steps'),
+};
+
+let selectedOp = 0;     // 0-based
+let selectedStep = -1;
+let kbOctave = 4;       // C4 = MIDI 60
+const pianoKeys = [];   // [{ el, semitone }]
+
+const stepEls = [];
+
+// Decay slider is logarithmic: 0..1000 -> 20 ms..2 s.
+function sliderToDecay(v) { return DECAY_MIN * Math.pow(DECAY_MAX / DECAY_MIN, v / 1000); }
+function decayToSlider(d) { return Math.round(1000 * Math.log(d / DECAY_MIN) / Math.log(DECAY_MAX / DECAY_MIN)); }
+function fmtDecay(d) { return d < 1 ? Math.round(d * 1000) + ' ms' : d.toFixed(2) + ' s'; }
+
+function opRole(opIndex) {
+  return ALGORITHMS[state.patch.algo].carriers.includes(opIndex + 1) ? 'carrier' : 'modulator';
+}
+
+function changed() { saveState(); }
+
+function markCustom() {
+  state.preset = '';
+  ui.preset.value = '';
+}
+
+function buildUI() {
+  ui.preset.innerHTML = '<option value="">— custom —</option>' +
+    Object.keys(PRESETS).map(n => `<option value="${n}">${n}</option>`).join('');
+
+  for (let a = 1; a <= 8; a++) {
+    const b = document.createElement('button');
+    b.textContent = a;
+    b.dataset.algo = a;
+    b.addEventListener('click', () => { state.patch.algo = a; markCustom(); renderPatch(); changed(); });
+    ui.algoButtons.appendChild(b);
+  }
+
+  for (let i = 0; i < 4; i++) {
+    const b = document.createElement('button');
+    b.dataset.op = i;
+    b.innerHTML = `Op ${i + 1}<span class="role"></span>`;
+    b.addEventListener('click', () => { selectedOp = i; renderPatch(); });
+    ui.opTabs.appendChild(b);
+  }
+
+  ui.ratio.max = RATIOS.length - 1;
+
+  for (let i = 0; i < 16; i++) {
+    const el = document.createElement('div');
+    el.className = 'step';
+    el.setAttribute('role', 'button');
+    el.innerHTML = `<span class="num">${i + 1}</span><span class="note"></span>`;
+    el.addEventListener('mousedown', e => e.preventDefault()); // keep focus off steps
+    el.addEventListener('click', () => {
+      state.steps[i].on = !state.steps[i].on;
+      selectedStep = i;
+      renderSteps();
+      changed();
+    });
+    ui.steps.appendChild(el);
+    stepEls.push(el);
+  }
+
+  ui.play.addEventListener('click', togglePlay);
+
+  ui.tempo.addEventListener('input', () => {
+    state.tempo = +ui.tempo.value;
+    ui.tempoVal.textContent = state.tempo;
+    changed();
+  });
+
+  ui.octave.addEventListener('change', () => { state.patch.octave = +ui.octave.value; markCustom(); changed(); });
+
+  ui.preset.addEventListener('change', () => {
+    const name = ui.preset.value;
+    if (!PRESETS[name]) return;
+    state.patch = presetToPatch(name);
+    state.preset = name;
+    renderPatch();
+    changed();
+  });
+
+  ui.reset.addEventListener('click', () => {
+    const keepPlaying = seq.playing;
+    state = defaultState();
+    selectedStep = -1;
+    renderAll();
+    changed();
+    if (keepPlaying) { stopSeq(); startSeq(); }
+  });
+
+  ui.ratio.addEventListener('input', () => { currentOp().ratio = RATIOS[+ui.ratio.value]; markCustom(); renderOpSliders(); changed(); });
+  ui.level.addEventListener('input', () => { currentOp().level = +ui.level.value; markCustom(); renderOpSliders(); changed(); });
+  ui.decay.addEventListener('input', () => { currentOp().decay = sliderToDecay(+ui.decay.value); markCustom(); renderOpSliders(); changed(); });
+
+  // Return focus to the body after using a control so Space and note keys aren't swallowed.
+  for (const el of [ui.preset, ui.octave]) el.addEventListener('change', () => el.blur());
+  document.addEventListener('mouseup', () => {
+    const a = document.activeElement;
+    if (a && a.tagName === 'BUTTON') a.blur();
+  });
+}
+
+function currentOp() { return state.patch.ops[selectedOp]; }
+
+function renderPatch() {
+  ui.octave.value = state.patch.octave;
+  ui.preset.value = state.preset || '';
+  for (const b of ui.algoButtons.children) b.classList.toggle('active', +b.dataset.algo === state.patch.algo);
+  for (const b of ui.opTabs.children) {
+    const i = +b.dataset.op, role = opRole(i);
+    b.classList.toggle('active', i === selectedOp);
+    b.classList.toggle('carrier', role === 'carrier');
+    b.classList.toggle('modulator', role === 'modulator');
+    b.querySelector('.role').textContent = role;
+  }
+  renderOpSliders();
+  renderDiagram();
+}
+
+function renderOpSliders() {
+  const op = currentOp();
+  ui.ratio.value = Math.max(0, RATIOS.indexOf(op.ratio));
+  ui.ratioVal.textContent = op.ratio;
+  ui.level.value = op.level;
+  ui.levelVal.textContent = op.level.toFixed(1);
+  ui.levelLabel.textContent = opRole(selectedOp) === 'carrier' ? 'Volume' : 'Index';
+  ui.decay.value = decayToSlider(op.decay);
+  ui.decayVal.textContent = fmtDecay(op.decay);
+}
+
+function renderDiagram() {
+  const algo = ALGORITHMS[state.patch.algo];
+  const isCarrier = op => algo.carriers.includes(op);
+  const targets = op => algo.edges.filter(([m]) => m === op).map(([, t]) => t);
+
+  // Row depth = longest path down to a carrier (carriers sit on the bottom row).
+  const depth = op => isCarrier(op) ? 0 : 1 + Math.max(...targets(op).map(depth));
+  const rows = {};
+  for (let op = 1; op <= 4; op++) (rows[depth(op)] ||= []).push(op);
+
+  const W = 220, boxW = 34, boxH = 24, rowH = 30, bottomY = 110;
+  const pos = {};
+  for (const [d, ops] of Object.entries(rows)) {
+    ops.forEach((op, i) => {
+      pos[op] = { x: (W / (ops.length + 1)) * (i + 1), y: bottomY - d * rowH };
+    });
+  }
+
+  const css = getComputedStyle(document.documentElement);
+  const cCol = css.getPropertyValue('--carrier'), mCol = css.getPropertyValue('--mod'), line = css.getPropertyValue('--dim');
+  let svg = '';
+  for (const [m, t] of algo.edges) {
+    svg += `<line x1="${pos[m].x}" y1="${pos[m].y + boxH / 2}" x2="${pos[t].x}" y2="${pos[t].y - boxH / 2}" stroke="${line}" stroke-width="1.5"/>`;
+  }
+  const outY = bottomY + boxH / 2 + 18;
+  const cx = algo.carriers.map(c => pos[c].x);
+  for (const c of algo.carriers) {
+    svg += `<line x1="${pos[c].x}" y1="${pos[c].y + boxH / 2}" x2="${pos[c].x}" y2="${outY}" stroke="${cCol}" stroke-width="1.5"/>`;
+  }
+  svg += `<line x1="${Math.min(...cx) - 10}" y1="${outY}" x2="${Math.max(...cx) + 10}" y2="${outY}" stroke="${cCol}" stroke-width="3"/>`;
+  svg += `<text x="${W - 6}" y="${outY + 4}" fill="${line}" font-size="10" text-anchor="end">out</text>`;
+  for (let op = 1; op <= 4; op++) {
+    const { x, y } = pos[op];
+    const col = isCarrier(op) ? cCol : mCol;
+    const sel = op - 1 === selectedOp;
+    svg += `<rect x="${x - boxW / 2}" y="${y - boxH / 2}" width="${boxW}" height="${boxH}" rx="4" fill="${col}" stroke="${sel ? '#fff' : 'none'}" stroke-width="2"/>`;
+    svg += `<text x="${x}" y="${y + 4}" fill="#111" font-size="12" font-weight="700" text-anchor="middle">${op}</text>`;
+  }
+  ui.algoDiagram.innerHTML = svg;
+}
+
+function renderSteps() {
+  state.steps.forEach((s, i) => {
+    const el = stepEls[i];
+    el.classList.toggle('on', s.on);
+    el.classList.toggle('selected', i === selectedStep);
+    el.querySelector('.note').textContent = noteName(s.note);
+  });
+}
+
+function setPlayhead(step) {
+  if (step === seq.playhead) return;
+  if (seq.playhead >= 0) stepEls[seq.playhead].classList.remove('playhead');
+  if (step >= 0) stepEls[step].classList.add('playhead');
+  seq.playhead = step;
+}
+
+function renderAll() {
+  ui.tempo.value = state.tempo;
+  ui.tempoVal.textContent = state.tempo;
+  renderKbOctave();
+  renderPatch();
+  renderSteps();
+}
+
+/* =========================================================================
+   KEYBOARD
+   ========================================================================= */
+
+const KEY_TO_SEMITONE = { a: 0, w: 1, s: 2, e: 3, d: 4, f: 5, t: 6, g: 7, y: 8, h: 9, u: 10, j: 11, k: 12 };
+
+document.addEventListener('keydown', e => {
+  if (e.metaKey || e.ctrlKey || e.altKey) return;
+  const key = e.key.toLowerCase();
+
+  if (key === ' ') {
+    e.preventDefault();
+    if (!e.repeat) togglePlay();
+    return;
+  }
+  if (key === 'z' || key === 'x') {
+    e.preventDefault();
+    shiftKbOctave(key === 'x' ? 1 : -1);
+    return;
+  }
+  if (key in KEY_TO_SEMITONE) {
+    e.preventDefault();
+    if (e.repeat) return;
+    playKey(KEY_TO_SEMITONE[key]);
+    flashPianoKey(KEY_TO_SEMITONE[key]);
+  }
+});
+
+// Shared by computer keys and the on-screen piano: audition, and assign to the selected step.
+function playKey(semitone) {
+  const midi = clamp(12 * (kbOctave + 1) + semitone, 0, 127);
+  ensureAudio();
+  playVoice(state.patch, midi, ctx.currentTime + 0.005);
+  if (selectedStep >= 0) {
+    state.steps[selectedStep].note = midi;
+    state.steps[selectedStep].on = true;
+    renderSteps();
+    changed();
+  }
+}
+
+function shiftKbOctave(delta) {
+  kbOctave = clamp(kbOctave + delta, 0, 8);
+  renderKbOctave();
+}
+
+function renderKbOctave() {
+  ui.kbOct.textContent = 'C' + kbOctave;
+  $('kbOctLabel').textContent = 'C' + kbOctave;
+  pianoKeys.forEach(k => { k.label.textContent = NOTE_NAMES[k.semitone % 12] + (kbOctave + Math.floor(k.semitone / 12)); });
+}
+
+function flashPianoKey(semitone) {
+  const k = pianoKeys.find(k => k.semitone === semitone);
+  if (!k) return;
+  k.el.classList.add('down');
+  setTimeout(() => k.el.classList.remove('down'), 120);
+}
+
+/* =========================================================================
+   ON-SCREEN PIANO (touch / mouse)
+   ========================================================================= */
+
+function buildPiano() {
+  const piano = $('piano');
+  const whites = [0, 2, 4, 5, 7, 9, 11, 12];
+  const blacks = { 1: 0, 3: 1, 6: 3, 8: 4, 10: 5 };   // semitone -> index of the white key to its left
+  const addKey = (semitone, cls) => {
+    const el = document.createElement('div');
+    el.className = 'key ' + cls;
+    el.setAttribute('role', 'button');
+    const label = document.createElement('span');
+    el.appendChild(label);
+    // pointerdown fires immediately on touch (no click delay); one handler covers mouse, pen and touch.
+    el.addEventListener('pointerdown', e => {
+      e.preventDefault();
+      el.classList.add('down');
+      playKey(semitone);
+    });
+    const up = () => el.classList.remove('down');
+    el.addEventListener('pointerup', up);
+    el.addEventListener('pointerleave', up);
+    el.addEventListener('pointercancel', up);
+    piano.appendChild(el);
+    pianoKeys.push({ el, semitone, label });
+    return el;
+  };
+  whites.forEach(s => addKey(s, 'white'));
+  const whiteW = 100 / whites.length;
+  for (const [s, left] of Object.entries(blacks)) {
+    const el = addKey(+s, 'black');
+    el.style.left = `calc(${(left + 1) * whiteW}% - 4%)`;
+  }
+  $('kbUp').addEventListener('click', () => shiftKbOctave(1));
+  $('kbDown').addEventListener('click', () => shiftKbOctave(-1));
+}
+
+/* =========================================================================
+   INIT
+   ========================================================================= */
+
+buildUI();
+buildPiano();
+renderAll();
+</script>
+</body>
+</html>
